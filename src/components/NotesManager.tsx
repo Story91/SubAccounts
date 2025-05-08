@@ -188,6 +188,31 @@ export default function NotesManager() {
     }
   }, [address])
 
+  // Aktualizuj listę publicznych notatek, gdy zmienią się notatki użytkownika
+  useEffect(() => {
+    if (notes.length > 0) {
+      // Znajdź publiczne notatki należące do użytkownika
+      const userPublicNotes = notes.filter(note => note.isPublic);
+      
+      // Pobierz publiczne notatki innych użytkowników - nie używamy stanu publicNotes,
+      // ponieważ mogłoby to prowadzić do pętli aktualizacji
+      const savedNotes = localStorage.getItem('smart-wallet-notes');
+      let otherPublicNotes: Note[] = [];
+      
+      if (savedNotes) {
+        try {
+          const allNotes = JSON.parse(savedNotes);
+          otherPublicNotes = allNotes.filter((note: Note) => note.isPublic && note.owner !== address);
+        } catch (e) {
+          console.error('Failed to parse saved notes', e);
+        }
+      }
+      
+      // Połącz publiczne notatki użytkownika z notatkami innych
+      setPublicNotes([...userPublicNotes, ...otherPublicNotes]);
+    }
+  }, [notes, address]);
+
   // Funkcja ładująca historię transakcji
   const loadTransactionHistory = (userAddress: string) => {
     if (typeof window !== 'undefined') {
@@ -197,12 +222,46 @@ export default function NotesManager() {
       if (txHistory) {
         try {
           const parsedHistory = JSON.parse(txHistory)
-          // Filtruj tylko transakcje związane z notatkami (zakup i tip)
-          const noteTransactions = parsedHistory.filter((tx: any) => 
-            tx.details.includes('note:') || 
-            tx.details.includes('tip for note')
-          )
-          setTransactions(noteTransactions)
+          
+          // Przetwarzanie transakcji przed dodaniem do stanu
+          const processedTransactions = parsedHistory.map((tx: any) => {
+            // Jeśli to transakcja związana z notatką, dodaj potrzebne dane z detali
+            if (tx.details.includes('note:') || tx.details.includes('tip for note') || tx.details.includes('Purchased note:')) {
+              let txType = 'unlocked';
+              let title = '';
+              let amount = '';
+              let author = '';
+              
+              if (tx.details.includes('tip for note')) {
+                txType = 'tip';
+                title = tx.details.split('note: ')[1] || '';
+                amount = tx.details.split('Sent ')[1]?.split(' ETH')[0] || '';
+                // Znajdź autora po tytule w notatkach
+                const matchingNote = [...notes, ...publicNotes].find(n => n.title === title);
+                author = matchingNote?.author || formatAddress(matchingNote?.owner);
+              } else if (tx.details.includes('Purchased note:')) {
+                txType = 'unlocked';
+                const parts = tx.details.split('Purchased note: ')[1].split(' for ');
+                title = parts[0] || '';
+                amount = parts[1]?.split(' ETH')[0] || '';
+                // Znajdź autora po tytule w notatkach
+                const matchingNote = [...notes, ...publicNotes].find(n => n.title === title);
+                author = matchingNote?.author || formatAddress(matchingNote?.owner);
+              }
+              
+              return {
+                ...tx,
+                type: txType,
+                title: title,
+                amount: amount,
+                author: author
+              };
+            }
+            
+            return tx;
+          });
+          
+          setTransactions(processedTransactions);
         } catch (e) {
           console.error('Failed to parse transaction history', e)
           setTransactions([])
@@ -236,7 +295,7 @@ export default function NotesManager() {
   }, [notes, address])
 
   // Helper function to directly save transactions to localStorage
-  const saveTransaction = (address: string | undefined, type: 'send' | 'sign', hash: string, details: string) => {
+  const saveTransaction = (address: string | undefined, type: 'send' | 'sign', hash: string, details: string, title?: string, author?: string, amount?: string) => {
     if (!address) return;
     
     console.log(`Saving ${type} transaction with hash: ${hash}`)
@@ -247,7 +306,10 @@ export default function NotesManager() {
       hash,
       type,
       timestamp: Date.now(),
-      details
+      details,
+      title,
+      author,
+      amount
     }
     
     // Get existing transactions
@@ -263,7 +325,7 @@ export default function NotesManager() {
     }
     
     // Add new transaction at the beginning and keep only last 20
-    transactions = [newTx, ...transactions].slice(0, 20)
+    transactions = [newTx, ...transactions].slice(0, 50) // Zwiększamy limit do 50
     
     // Save updated transactions
     localStorage.setItem(storageKey, JSON.stringify(transactions))
@@ -273,6 +335,9 @@ export default function NotesManager() {
       detail: { type, hash, details }
     })
     window.dispatchEvent(event)
+    
+    // Odśwież transakcje w UI
+    loadTransactionHistory(address)
     
     console.log('Transaction saved successfully')
   }
@@ -289,20 +354,29 @@ export default function NotesManager() {
 
     if (isEditMode && selectedNote) {
       // Aktualizacja istniejącej notatki
+      const updatedNote = { 
+        ...selectedNote, 
+        title: newNoteTitle, 
+        content: newNoteContent, 
+        updated: now,
+        isPublic: isPublicMode,
+        publicPrice: isPublicMode ? publicPrice : undefined,
+        author: formattedAuthor
+      };
+      
       const updatedNotes = notes.map(note => 
-        note.id === selectedNote.id 
-          ? { 
-              ...note, 
-              title: newNoteTitle, 
-              content: newNoteContent, 
-              updated: now,
-              isPublic: isPublicMode,
-              publicPrice: isPublicMode ? publicPrice : undefined,
-              author: formattedAuthor
-            } 
-          : note
+        note.id === selectedNote.id ? updatedNote : note
       )
       setNotes(updatedNotes)
+      
+      // Jeśli notatka stała się publiczna, dodaj ją do publicNotes
+      if (isPublicMode && !selectedNote.isPublic) {
+        showToast('Note is now public!', 'success')
+      }
+      // Jeśli notatka przestała być publiczna, usuń ją z publicNotes
+      else if (!isPublicMode && selectedNote.isPublic) {
+        setPublicNotes(prev => prev.filter(note => note.id !== selectedNote.id))
+      }
     } else {
       // Tworzenie nowej notatki
       const newNote: Note = {
@@ -317,7 +391,13 @@ export default function NotesManager() {
         publicPrice: isPublicMode ? publicPrice : undefined,
         author: formattedAuthor
       }
-      setNotes([...notes, newNote])
+      
+      setNotes(prev => [...prev, newNote])
+      
+      // Jeśli nowa notatka jest publiczna, dodaj ją również do listy publicznych notatek
+      if (isPublicMode) {
+        showToast('New public note created!', 'success')
+      }
     }
 
     // Reset formularza
@@ -328,6 +408,11 @@ export default function NotesManager() {
     setIsPublicMode(false)
     setPublicPrice('0.0001')
     setAuthorName('')
+    
+    // Przejdź do zakładki z notatkami
+    if (activeTab === 'create-note') {
+      setActiveTab(isPublicMode ? 'public-notes' : 'my-notes')
+    }
   }
 
   // Obsługa edycji notatki
@@ -396,12 +481,13 @@ export default function NotesManager() {
       
       // Get note title for the transaction details
       const noteTitle = note.title || 'Unknown note'
+      const noteAuthor = note.author || formatAddress(note.owner)
       
       // Szczegóły transakcji
       const txDetails = `Sent ${tipAmount} ETH tip for note: ${noteTitle}`
       
       // Save transaction to history
-      saveTransaction(address, 'send', hash, txDetails)
+      saveTransaction(address, 'send', hash, txDetails, noteTitle, noteAuthor, tipAmount)
       
       // Zaktualizuj historię transakcji w UI
       const newTx = {
@@ -410,7 +496,7 @@ export default function NotesManager() {
         type: 'tip',
         timestamp: Date.now(),
         details: txDetails,
-        author: note.author || formatAddress(note.owner),
+        author: noteAuthor,
         title: noteTitle,
         amount: tipAmount
       }
@@ -459,9 +545,12 @@ export default function NotesManager() {
       )
       setPublicNotes(updatedPublicNotes)
       
+      // Pobierz dane autora
+      const noteAuthor = note.author || formatAddress(note.owner)
+      
       // Save transaction to history
       const txDetails = `Purchased note: ${note.title} for ${note.publicPrice} ETH`
-      saveTransaction(address, 'send', hash, txDetails)
+      saveTransaction(address, 'send', hash, txDetails, note.title, noteAuthor, note.publicPrice)
       
       // Zaktualizuj historię transakcji w UI
       const newTx = {
@@ -470,7 +559,7 @@ export default function NotesManager() {
         type: 'send',
         timestamp: Date.now(),
         details: txDetails,
-        author: note.author || formatAddress(note.owner),
+        author: noteAuthor,
         title: note.title,
         amount: note.publicPrice
       }
@@ -542,9 +631,12 @@ export default function NotesManager() {
         // Oznacz notatkę jako odblokowaną
         note.unlocked = true
         
+        // Pobierz dane autora
+        const noteAuthor = note.author || formatAddress(note.owner)
+        
         // Zapisz transakcję w historii
         const txDetails = `Purchased note: ${note.title} for ${note.publicPrice} ETH`
-        saveTransaction(address, 'send', hash, txDetails)
+        saveTransaction(address, 'send', hash, txDetails, note.title, noteAuthor, note.publicPrice)
         
         // Dodaj transakcję do listy nowych transakcji
         newTransactions.push({
@@ -553,7 +645,7 @@ export default function NotesManager() {
           type: 'send',
           timestamp: Date.now(),
           details: txDetails,
-          author: note.author || formatAddress(note.owner),
+          author: noteAuthor,
           title: note.title,
           amount: note.publicPrice
         })
@@ -992,15 +1084,15 @@ export default function NotesManager() {
                             </div>
                             <div>
                               <p className="text-sm text-white font-medium">
-                                {tx.type === 'tip' ? 'Tipped author of' : 'Unlocked'}: <span className="text-blue-300">{tx.title}</span>
+                                {tx.type === 'tip' ? 'Tipped author of' : 'Unlocked'}: <span className="text-blue-300">{tx.title || 'Unknown Note'}</span>
                               </p>
-                              <p className="text-xs text-gray-400">By: {tx.author}</p>
+                              <p className="text-xs text-gray-400">By: {tx.author || 'Unknown'}</p>
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center space-x-3">
                           <div className="text-center">
-                            <div className="text-sm font-medium text-yellow-400">{tx.amount} ETH</div>
+                            <div className="text-sm font-medium text-yellow-400">{tx.amount || '0.0001'} ETH</div>
                             <div className="text-xs text-gray-400">{new Date(tx.timestamp).toLocaleString()}</div>
                           </div>
                           <a 
