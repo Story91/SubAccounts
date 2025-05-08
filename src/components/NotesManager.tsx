@@ -295,7 +295,7 @@ export default function NotesManager() {
   }, [notes, address])
 
   // Helper function to directly save transactions to localStorage
-  const saveTransaction = (address: string | undefined, type: 'send' | 'sign', hash: string, details: string, title?: string, author?: string, amount?: string) => {
+  const saveTransaction = (address: string | undefined, type: 'send' | 'sign' | 'tip' | 'unlock', hash: string, details: string, title?: string, author?: string, amount?: string) => {
     if (!address) return;
     
     console.log(`Saving ${type} transaction with hash: ${hash}`)
@@ -484,11 +484,13 @@ export default function NotesManager() {
       // Szczegóły transakcji
       const txDetails = `Sent ${tipAmount} ETH tip for note: ${noteTitle}`
       
-      // Save transaction to history
-      const newTx = saveTransaction(address, 'send', hash, txDetails, noteTitle, noteAuthor, tipAmount)
+      // Save transaction to history with type 'tip'
+      const newTx = saveTransaction(address, 'tip', hash, txDetails, noteTitle, noteAuthor, tipAmount)
       
       // Update the UI with the new transaction without reloading everything
       if (newTx) {
+        // Make sure the transaction has the 'tip' type
+        newTx.type = 'tip'
         setTransactions(prev => [newTx, ...prev])
       }
       
@@ -551,9 +553,9 @@ export default function NotesManager() {
       // Pobierz dane autora
       const noteAuthor = note.author || formatAddress(note.owner)
       
-      // Save transaction to history
+      // Save transaction to history with 'unlock' type
       const txDetails = `Purchased note: ${note.title} for ${note.publicPrice} ETH`
-      const newTx = saveTransaction(address, 'send', hash, txDetails, note.title, noteAuthor, note.publicPrice)
+      const newTx = saveTransaction(address, 'unlock', hash, txDetails, note.title, noteAuthor, note.publicPrice)
       
       // Update the UI with the new transaction without reloading everything
       if (newTx) {
@@ -646,9 +648,9 @@ export default function NotesManager() {
         // Pobierz dane autora
         const noteAuthor = note.author || formatAddress(note.owner)
         
-        // Zapisz transakcję w historii
+        // Zapisz transakcję w historii with 'unlock' type
         const txDetails = `Purchased note: ${note.title} for ${note.publicPrice} ETH`
-        const newTx = saveTransaction(address, 'send', hash, txDetails, note.title, noteAuthor, note.publicPrice)
+        const newTx = saveTransaction(address, 'unlock', hash, txDetails, note.title, noteAuthor, note.publicPrice)
         
         // Dodaj transakcję do listy nowych transakcji
         if (newTx) {
