@@ -25,7 +25,15 @@ const VALID_MODELS = [
 
 export async function POST(request: NextRequest) {
   // Using environment variable for API key
-  const apiKey = process.env.GROQ_API_KEY || "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";
+  const apiKey = process.env.GROQ_API_KEY;
+  
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "Missing GROQ_API_KEY environment variable" },
+      { status: 500 }
+    );
+  }
+  
   const groq = new Groq({ apiKey });
   
   try {
@@ -95,7 +103,15 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   // Using environment variable for API key
-  const apiKey = process.env.GROQ_API_KEY || "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";
+  const apiKey = process.env.GROQ_API_KEY;
+  
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "Missing GROQ_API_KEY environment variable" },
+      { status: 500 }
+    );
+  }
+  
   const groq = new Groq({ apiKey });
   
   try {
