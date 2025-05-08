@@ -135,7 +135,8 @@ export default function GroqAIChat() {
     
     try {
       setIsPaying(true)
-      setShowPaymentPrompt(false)
+      // Nie ukrywamy okienka płatności, tylko pokazujemy animację ładowania
+      // setShowPaymentPrompt(false)
       
       // Recipient address for AI service payments
       const serviceAddress = '0xF1fa20027b6202bc18e4454149C85CB01dC91Dfd'
@@ -157,6 +158,11 @@ export default function GroqAIChat() {
         }
       }
       
+      // Ukryj okienko płatności po zakończeniu transakcji
+      setShowPaymentPrompt(false)
+      // Zamknij okienko wyboru modelu
+      setIsModelSelectOpen(false)
+      
       // Add payment confirmation message
       const paymentMessage: Message = {
         id: Date.now().toString(),
@@ -165,6 +171,29 @@ export default function GroqAIChat() {
       }
       
       setMessages(prev => [...prev, paymentMessage])
+      
+      // Dodaj link do transakcji w BaseScan (tak jak przy funkcji handleSendTip)
+      setTimeout(() => {
+        const linkMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `You can view this transaction on BaseScan`
+        }
+        
+        setMessages(prev => [...prev, linkMessage])
+        
+        // Add a clickable button in a separate message
+        const buttonMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          role: 'assistant',
+          content: '🔍 View Transaction'
+        }
+        
+        setMessages(prev => [...prev, buttonMessage])
+        
+        // Store the transaction hash in localStorage so we can open it later
+        localStorage.setItem('last_transaction_hash', hash)
+      }, 500)
       
       // Now send the message if there is a pending one
       if (pendingMessage) {
@@ -190,6 +219,7 @@ export default function GroqAIChat() {
   const cancelPayment = () => {
     setShowPaymentPrompt(false)
     setPendingMessage('')
+    setIsModelSelectOpen(false)
   }
 
   // Send message to AI
@@ -419,7 +449,8 @@ export default function GroqAIChat() {
         setShowPaymentPrompt(true)
         setPendingMessage('')  // No message yet, just changing model
         setSelectedModel(modelId) // Set the model immediately so it shows in UI
-        setIsModelSelectOpen(false)
+        // Nie zamykamy okienka wyboru modelu, aby użytkownik widział, że nadal jest w trakcie procesu wyboru
+        // setIsModelSelectOpen(false)
       }
     }
   }
@@ -635,7 +666,7 @@ export default function GroqAIChat() {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        Processing
+                        Processing Payment
                       </span>
                     ) : (
                       <>

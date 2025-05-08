@@ -66,57 +66,6 @@ export default function NotesManager() {
     }, 5000)
   }
 
-  // Pobierz notatki z localStorage przy pierwszym renderowaniu
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedNotes = localStorage.getItem('smart-wallet-notes')
-      if (savedNotes) {
-        try {
-          const allNotes = JSON.parse(savedNotes)
-          // Filtruj notatki należące do aktualnego użytkownika
-          const myNotes = allNotes.filter((note: Note) => note.owner === address)
-          setNotes(myNotes)
-          
-          // Filtruj publiczne notatki innych użytkowników
-          const otherPublicNotes = allNotes.filter((note: Note) => note.isPublic && note.owner !== address)
-          setPublicNotes(otherPublicNotes)
-        } catch (e) {
-          console.error('Failed to parse saved notes', e)
-        }
-      }
-
-      // Ładuj historię transakcji
-      if (address) {
-        loadTransactionHistory(address)
-      }
-    }
-  }, [address])
-
-  // Funkcja ładująca historię transakcji
-  const loadTransactionHistory = (userAddress: string) => {
-    if (typeof window !== 'undefined') {
-      const storageKey = `sub-account-transactions-${userAddress}`
-      const txHistory = localStorage.getItem(storageKey)
-      
-      if (txHistory) {
-        try {
-          const parsedHistory = JSON.parse(txHistory)
-          // Filtruj tylko transakcje związane z notatkami (zakup i tip)
-          const noteTransactions = parsedHistory.filter((tx: any) => 
-            tx.details.includes('note:') || 
-            tx.details.includes('tip for note')
-          )
-          setTransactions(noteTransactions)
-        } catch (e) {
-          console.error('Failed to parse transaction history', e)
-          setTransactions([])
-        }
-      } else {
-        setTransactions([])
-      }
-    }
-  }
-
   // Dynamicznie generuj przykładowe publiczne notatki od innych "użytkowników"
   const generatePublicSampleNotes = () => {
     const sampleAuthors = [
@@ -195,7 +144,73 @@ export default function NotesManager() {
     localStorage.setItem('smart-wallet-notes', JSON.stringify(updatedNotes))
     
     // Zaktualizuj stan
-    setPublicNotes([...publicNotes, ...samplePublicNotes])
+    setPublicNotes(prev => [...prev, ...samplePublicNotes])
+  }
+
+  // Funkcja sprawdzająca czy są publiczne notatki i generująca jeśli potrzeba
+  const checkAndGeneratePublicNotes = () => {
+    // Sprawdź najpierw w localStorage
+    const savedNotes = localStorage.getItem('smart-wallet-notes')
+    if (savedNotes) {
+      try {
+        const allNotes = JSON.parse(savedNotes)
+        // Filtruj notatki należące do aktualnego użytkownika
+        const myNotes = allNotes.filter((note: Note) => note.owner === address)
+        setNotes(myNotes)
+        
+        // Filtruj publiczne notatki innych użytkowników
+        const otherPublicNotes = allNotes.filter((note: Note) => note.isPublic && note.owner !== address)
+        setPublicNotes(otherPublicNotes)
+        
+        // Jeśli nie ma żadnych publicznych notatek, wygeneruj przykładowe
+        if (otherPublicNotes.length === 0) {
+          generatePublicSampleNotes()
+        }
+      } catch (e) {
+        console.error('Failed to parse saved notes', e)
+        generatePublicSampleNotes() // Wygeneruj w przypadku błędu
+      }
+    } else {
+      // Brak notatek w localStorage - wygeneruj przykładowe publiczne notatki
+      generatePublicSampleNotes()
+    }
+  }
+
+  // Pobierz notatki z localStorage przy pierwszym renderowaniu
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      checkAndGeneratePublicNotes()
+
+      // Ładuj historię transakcji
+      if (address) {
+        loadTransactionHistory(address)
+      }
+    }
+  }, [address])
+
+  // Funkcja ładująca historię transakcji
+  const loadTransactionHistory = (userAddress: string) => {
+    if (typeof window !== 'undefined') {
+      const storageKey = `sub-account-transactions-${userAddress}`
+      const txHistory = localStorage.getItem(storageKey)
+      
+      if (txHistory) {
+        try {
+          const parsedHistory = JSON.parse(txHistory)
+          // Filtruj tylko transakcje związane z notatkami (zakup i tip)
+          const noteTransactions = parsedHistory.filter((tx: any) => 
+            tx.details.includes('note:') || 
+            tx.details.includes('tip for note')
+          )
+          setTransactions(noteTransactions)
+        } catch (e) {
+          console.error('Failed to parse transaction history', e)
+          setTransactions([])
+        }
+      } else {
+        setTransactions([])
+      }
+    }
   }
 
   // Zapisz notatki do localStorage po każdej zmianie
@@ -831,12 +846,6 @@ export default function NotesManager() {
               <p className="text-gray-300 mb-4">
                 There are no public notes available yet. Be the first to share your knowledge!
               </p>
-              <button
-                onClick={generatePublicSampleNotes}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded"
-              >
-                Add Sample Public Notes
-              </button>
             </div>
           ) : (
             <>
