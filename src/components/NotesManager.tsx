@@ -17,6 +17,15 @@ type Note = {
   tipCount: number
   publicPrice?: string // Cena za dostęp do notatki (w ETH)
   author?: string // Nazwa autora (opcjonalne, jeśli nie podano używamy adresu portfela)
+  unlocked?: boolean
+}
+
+// Typ dla powiadomień
+type Toast = {
+  id: string
+  message: string
+  type: 'success' | 'error' | 'info'
+  txHash?: string
 }
 
 export default function NotesManager() {
@@ -32,6 +41,10 @@ export default function NotesManager() {
   const [isPublicMode, setIsPublicMode] = useState(false)
   const [publicPrice, setPublicPrice] = useState('0.0001')
   const [authorName, setAuthorName] = useState('')
+  const [transactions, setTransactions] = useState<any[]>([])
+  const [processingNotes, setProcessingNotes] = useState<string[]>([])
+  const [isUnlockingAll, setIsUnlockingAll] = useState(false)
+  const [toasts, setToasts] = useState<Toast[]>([])
   
   const { sendTransactionAsync } = useSendTransaction()
 
@@ -39,6 +52,18 @@ export default function NotesManager() {
   const formatAddress = (addr: string | undefined): string => {
     if (!addr) return 'Anonymous';
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  }
+
+  // Funkcja dodająca powiadomienie
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success', txHash?: string) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+    const newToast = { id, message, type, txHash }
+    setToasts(prev => [newToast, ...prev])
+    
+    // Automatycznie usuń powiadomienie po 5 sekundach
+    setTimeout(() => {
+      setToasts(prev => prev.filter(toast => toast.id !== id))
+    }, 5000)
   }
 
   // Pobierz notatki z localStorage przy pierwszym renderowaniu
@@ -59,8 +84,119 @@ export default function NotesManager() {
           console.error('Failed to parse saved notes', e)
         }
       }
+
+      // Ładuj historię transakcji
+      if (address) {
+        loadTransactionHistory(address)
+      }
     }
   }, [address])
+
+  // Funkcja ładująca historię transakcji
+  const loadTransactionHistory = (userAddress: string) => {
+    if (typeof window !== 'undefined') {
+      const storageKey = `sub-account-transactions-${userAddress}`
+      const txHistory = localStorage.getItem(storageKey)
+      
+      if (txHistory) {
+        try {
+          const parsedHistory = JSON.parse(txHistory)
+          // Filtruj tylko transakcje związane z notatkami (zakup i tip)
+          const noteTransactions = parsedHistory.filter((tx: any) => 
+            tx.details.includes('note:') || 
+            tx.details.includes('tip for note')
+          )
+          setTransactions(noteTransactions)
+        } catch (e) {
+          console.error('Failed to parse transaction history', e)
+          setTransactions([])
+        }
+      } else {
+        setTransactions([])
+      }
+    }
+  }
+
+  // Dynamicznie generuj przykładowe publiczne notatki od innych "użytkowników"
+  const generatePublicSampleNotes = () => {
+    const sampleAuthors = [
+      { address: '0x1234567890123456789012345678901234567890', name: 'CryptoWhale' },
+      { address: '0x2345678901234567890123456789012345678901', name: 'BlockchainDev' },
+      { address: '0x3456789012345678901234567890123456789012', name: 'NFT_Collector' },
+      { address: '0x4567890123456789012345678901234567890123', name: 'DeFiMaster' },
+      { address: '0x5678901234567890123456789012345678901234', name: 'TokenExpert' }
+    ];
+    
+    const samplePublicNotes: Note[] = [
+      {
+        id: `note-${Date.now()}-pub1`,
+        title: 'Sub Accounts: The Future of Web3 UX',
+        content: 'Sub Accounts represent the next evolution in web3 user experience by allowing seamless, permission-less interactions without constant wallet confirmations.\n\nUnlike traditional wallet interactions, Sub Accounts let dApps execute transactions within pre-approved limits, creating a web2-like UX with web3 security.',
+        created: Date.now() - 345600000, // 4 days ago
+        updated: Date.now() - 345600000,
+        isPublic: true,
+        owner: sampleAuthors[0].address,
+        author: sampleAuthors[0].name,
+        tipCount: 5,
+        publicPrice: '0.0002'
+      },
+      {
+        id: `note-${Date.now()}-pub2`,
+        title: 'How Smart Wallet Security Works',
+        content: 'Smart Wallets utilize a multi-layered security approach with threshold signatures and social recovery mechanisms.\n\nThe key innovation is the separation between authentication (proving who you are) and authorization (approving specific actions), enabling more flexible permission models.',
+        created: Date.now() - 432000000, // 5 days ago
+        updated: Date.now() - 432000000,
+        isPublic: true,
+        owner: sampleAuthors[1].address,
+        author: sampleAuthors[1].name,
+        tipCount: 3,
+        publicPrice: '0.0001'
+      },
+      {
+        id: `note-${Date.now()}-pub3`,
+        title: 'Building with ERC-4337 Account Abstraction',
+        content: 'ERC-4337 Account Abstraction is revolutionizing how we think about blockchain interactions. This guide walks you through implementing basic account abstraction features in your dApp.',
+        created: Date.now() - 259200000, // 3 days ago
+        updated: Date.now() - 259200000,
+        isPublic: true,
+        owner: sampleAuthors[2].address,
+        author: sampleAuthors[2].name,
+        tipCount: 7,
+        publicPrice: '0.0003'
+      },
+      {
+        id: `note-${Date.now()}-pub4`,
+        title: 'Free Guide: Getting Started with Web3',
+        content: 'This beginner-friendly guide explains the fundamentals of web3, wallets, and how to safely navigate the blockchain ecosystem. Perfect for newcomers looking to understand the decentralized web.',
+        created: Date.now() - 172800000, // 2 days ago
+        updated: Date.now() - 172800000,
+        isPublic: true,
+        owner: sampleAuthors[3].address,
+        author: sampleAuthors[3].name,
+        tipCount: 2,
+        publicPrice: ''  // Free note
+      }
+    ];
+    
+    // Pobierz wszystkie notatki
+    const savedNotes = localStorage.getItem('smart-wallet-notes')
+    let allNotes: Note[] = []
+    
+    if (savedNotes) {
+      try {
+        allNotes = JSON.parse(savedNotes)
+      } catch (e) {
+        console.error('Failed to parse saved notes', e)
+      }
+    }
+    
+    // Dodaj przykładowe publiczne notatki
+    const updatedNotes = [...allNotes, ...samplePublicNotes]
+    localStorage.setItem('smart-wallet-notes', JSON.stringify(updatedNotes))
+    
+    // Zaktualizuj stan
+    setPublicNotes([...publicNotes, ...samplePublicNotes])
+  }
 
   // Zapisz notatki do localStorage po każdej zmianie
   useEffect(() => {
@@ -129,7 +265,7 @@ export default function NotesManager() {
   // Obsługa tworzenia/edycji notatki
   const handleSaveNote = () => {
     if (!newNoteTitle.trim() || !newNoteContent.trim()) {
-      alert('Title and content are required')
+      showToast('Title and content are required', 'error')
       return
     }
 
@@ -192,14 +328,22 @@ export default function NotesManager() {
 
   // Obsługa usuwania notatki
   const handleDeleteNote = (id: string) => {
-    if (confirm('Are you sure you want to delete this note?')) {
+    if (window.confirm('Are you sure you want to delete this note?')) {
       setNotes(notes.filter(note => note.id !== id))
+      showToast('Note deleted successfully', 'info')
     }
   }
 
   // Obsługa wysyłania napiwku
   const handleSendTip = async (noteOwner: string, noteId: string) => {
+    // Znajdź notatkę
+    const note = publicNotes.find(n => n.id === noteId) || notes.find(n => n.id === noteId)
+    if (!note) return
+    
     try {
+      // Ustaw stan przetwarzania dla tej notatki
+      setProcessingNotes(prev => [...prev, noteId])
+      
       const tipAmount = '0.0001' // Stała kwota napiwku
       
       // Wyślij transakcję
@@ -236,17 +380,35 @@ export default function NotesManager() {
       }
       
       // Get note title for the transaction details
-      const noteTitle = notes.find(note => note.id === noteId)?.title || 
-                       publicNotes.find(note => note.id === noteId)?.title || 
-                       'Unknown note';
+      const noteTitle = note.title || 'Unknown note'
+      
+      // Szczegóły transakcji
+      const txDetails = `Sent ${tipAmount} ETH tip for note: ${noteTitle}`
       
       // Save transaction to history
-      saveTransaction(address, 'send', hash, `Sent ${tipAmount} ETH tip for note: ${noteTitle}`)
+      saveTransaction(address, 'send', hash, txDetails)
       
-      alert(`Tip sent successfully! Transaction hash: ${hash.slice(0, 10)}...`)
+      // Zaktualizuj historię transakcji w UI
+      const newTx = {
+        id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        hash,
+        type: 'tip',
+        timestamp: Date.now(),
+        details: txDetails,
+        author: note.author || formatAddress(note.owner),
+        title: noteTitle,
+        amount: tipAmount
+      }
+      
+      setTransactions(prev => [newTx, ...prev])
+      
+      showToast(`Tip sent successfully!`, 'success', hash)
     } catch (error) {
       console.error('Error sending tip:', error)
-      alert('Failed to send tip. Please try again.')
+      showToast('Failed to send tip. Please try again.', 'error')
+    } finally {
+      // Usuń notatkę ze stanu przetwarzania
+      setProcessingNotes(prev => prev.filter(id => id !== noteId))
     }
   }
 
@@ -255,7 +417,10 @@ export default function NotesManager() {
     if (!note.publicPrice) return
     
     try {
-      // Wyślij transakcję
+      // Ustaw stan przetwarzania dla tej notatki
+      setProcessingNotes(prev => [...prev, note.id])
+      
+      // Wyślij transakcję za pomocą Sub Account (brak popup)
       const hash = await sendTransactionAsync({
         to: note.owner as `0x${string}`,
         value: parseEther(note.publicPrice),
@@ -272,14 +437,133 @@ export default function NotesManager() {
       
       setNotes([...notes, purchasedNote])
       
-      // Save transaction to history
-      saveTransaction(address, 'send', hash, `Purchased note: ${note.title} for ${note.publicPrice} ETH`)
+      // Wyświetl znacznik "Unlocked" dla tej notatki
+      // Zaktualizuj publicNotes, dodając pole unlocked dla tej notatki
+      const updatedPublicNotes = publicNotes.map(n => 
+        n.id === note.id ? { ...n, unlocked: true } : n
+      )
+      setPublicNotes(updatedPublicNotes)
       
-      alert(`Note purchased successfully! Transaction hash: ${hash.slice(0, 10)}...`)
+      // Save transaction to history
+      const txDetails = `Purchased note: ${note.title} for ${note.publicPrice} ETH`
+      saveTransaction(address, 'send', hash, txDetails)
+      
+      // Zaktualizuj historię transakcji w UI
+      const newTx = {
+        id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        hash,
+        type: 'send',
+        timestamp: Date.now(),
+        details: txDetails,
+        author: note.author || formatAddress(note.owner),
+        title: note.title,
+        amount: note.publicPrice
+      }
+      
+      setTransactions(prev => [newTx, ...prev])
+      
+      showToast(`Note "${note.title}" unlocked successfully!`, 'success', hash)
     } catch (error) {
       console.error('Error purchasing note:', error)
-      alert('Failed to purchase note. Please try again.')
+      showToast('Failed to purchase note. Please try again.', 'error')
+    } finally {
+      // Usuń notatkę ze stanu przetwarzania
+      setProcessingNotes(prev => prev.filter(id => id !== note.id))
     }
+  }
+  
+  // Funkcja do zakupu wszystkich płatnych notatek jednocześnie
+  const handlePurchaseAllNotes = async () => {
+    // Znajdź wszystkie płatne notatki, które nie zostały jeszcze odblokowane
+    const paidNotes = publicNotes.filter(note => note.publicPrice && !note.unlocked)
+    
+    if (paidNotes.length === 0) {
+      showToast('No paid notes to unlock!', 'info')
+      return
+    }
+    
+    // Oblicz całkowitą kwotę potrzebną do zakupu wszystkich notatek
+    let totalCost = 0
+    for (const note of paidNotes) {
+      if (note.publicPrice) {
+        totalCost += parseFloat(note.publicPrice)
+      }
+    }
+    
+    if (!window.confirm(`This will unlock all ${paidNotes.length} paid notes for a total of ${totalCost.toFixed(4)} ETH. Continue?`)) {
+      return
+    }
+    
+    // Ustaw stan ładowania dla wszystkich notatek
+    setIsUnlockingAll(true)
+    const noteIdsToProcess = paidNotes.map(note => note.id)
+    setProcessingNotes(prev => [...prev, ...noteIdsToProcess])
+    
+    // Proces zakupu dla każdej notatki
+    let successCount = 0
+    let newTransactions = []
+    
+    for (const note of paidNotes) {
+      if (!note.publicPrice) continue
+      
+      try {
+        // Wyślij transakcję
+        const hash = await sendTransactionAsync({
+          to: note.owner as `0x${string}`,
+          value: parseEther(note.publicPrice),
+        })
+        
+        // Dodaj kopię notatki do notatek użytkownika
+        const purchasedNote: Note = {
+          ...note,
+          id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          owner: address || 'anonymous',
+          isPublic: false,
+          publicPrice: undefined
+        }
+        
+        setNotes(prev => [...prev, purchasedNote])
+        
+        // Oznacz notatkę jako odblokowaną
+        note.unlocked = true
+        
+        // Zapisz transakcję w historii
+        const txDetails = `Purchased note: ${note.title} for ${note.publicPrice} ETH`
+        saveTransaction(address, 'send', hash, txDetails)
+        
+        // Dodaj transakcję do listy nowych transakcji
+        newTransactions.push({
+          id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          hash,
+          type: 'send',
+          timestamp: Date.now(),
+          details: txDetails,
+          author: note.author || formatAddress(note.owner),
+          title: note.title,
+          amount: note.publicPrice
+        })
+        
+        successCount++
+      } catch (error) {
+        console.error(`Error purchasing note ${note.title}:`, error)
+      } finally {
+        // Usuń notatkę ze stanu przetwarzania
+        setProcessingNotes(prev => prev.filter(id => id !== note.id))
+      }
+    }
+    
+    // Zaktualizuj historię transakcji w UI
+    setTransactions(prev => [...newTransactions, ...prev])
+    
+    // Zaktualizuj widok publicNotes
+    const updatedPublicNotes = [...publicNotes]
+    setPublicNotes(updatedPublicNotes)
+    
+    // Wyłącz stan ładowania
+    setIsUnlockingAll(false)
+    
+    // Pokaż podsumowanie
+    showToast(`Successfully unlocked ${successCount} out of ${paidNotes.length} notes.`, 'success')
   }
 
   // Dodaj przykładowe notatki dla demo
@@ -316,6 +600,54 @@ export default function NotesManager() {
 
   return (
     <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+      {/* Toast Notifications */}
+      <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 flex flex-col items-center space-y-4 pointer-events-none">
+        {toasts.map(toast => (
+          <div 
+            key={toast.id} 
+            className={`max-w-md w-full p-4 rounded-lg shadow-lg flex items-center justify-between transition-all duration-300 text-white
+              ${toast.type === 'success' ? 'bg-green-800/90' : 
+                toast.type === 'error' ? 'bg-red-800/90' : 'bg-blue-800/90'}`}
+            style={{
+              animation: 'fadeInOut 5s forwards'
+            }}
+          >
+            <div className="flex items-center">
+              {toast.type === 'success' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ) : toast.type === 'error' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+              <div>
+                <div className="font-semibold text-sm">{toast.message}</div>
+                {toast.txHash && (
+                  <div className="text-xs text-gray-300">
+                    Tx: {toast.txHash.slice(0, 10)}...
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <style jsx>{`
+        @keyframes fadeInOut {
+          0% { opacity: 0; transform: translateY(20px); }
+          10% { opacity: 1; transform: translateY(0); }
+          90% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-20px); }
+        }
+      `}</style>
+      
       <div className="flex space-x-2 border-b border-gray-700 mb-6">
         <button
           onClick={() => setActiveTab('my-notes')}
@@ -417,12 +749,24 @@ export default function NotesManager() {
                           {note.publicPrice && ` (${note.publicPrice} ETH)`}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center bg-gray-900/50 text-gray-400 px-2 py-1 rounded">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                          </svg>
-                          Private
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          <span className="inline-flex items-center bg-gray-900/50 text-gray-400 px-2 py-1 rounded">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            Private
+                          </span>
+                          <button
+                            onClick={() => {
+                              const updatedNote = { ...note, isPublic: true, publicPrice: '0.0001' };
+                              handleEditNote(updatedNote);
+                              setActiveTab('create-note');
+                            }}
+                            className="inline-flex items-center bg-green-700 hover:bg-green-800 text-white text-xs px-2 py-1 rounded"
+                          >
+                            Make Public
+                          </button>
+                        </div>
                       )}
                     </div>
                     
@@ -450,61 +794,223 @@ export default function NotesManager() {
       {/* Publiczne notatki */}
       {activeTab === 'public-notes' && (
         <div>
-          <h2 className="text-xl font-bold text-white mb-4">Public Notes</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-white">Public Notes</h2>
+            
+            {publicNotes.length > 0 && publicNotes.some(note => note.publicPrice && !note.unlocked) && (
+              <button 
+                onClick={handlePurchaseAllNotes}
+                disabled={isUnlockingAll}
+                className={`text-sm ${isUnlockingAll 
+                  ? 'bg-gray-600 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'} 
+                  text-white py-1 px-3 rounded flex items-center`}
+              >
+                {isUnlockingAll ? (
+                  <>
+                    <svg className="animate-spin mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Unlocking...
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    Unlock All Notes
+                  </>
+                )}
+              </button>
+            )}
+          </div>
 
           {publicNotes.length === 0 ? (
             <div className="bg-gray-700 rounded-lg p-8 text-center">
-              <p className="text-gray-300">
+              <p className="text-gray-300 mb-4">
                 There are no public notes available yet. Be the first to share your knowledge!
               </p>
+              <button
+                onClick={generatePublicSampleNotes}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded"
+              >
+                Add Sample Public Notes
+              </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {publicNotes.map(note => (
-                <div key={note.id} className="bg-gray-700 border border-gray-600 rounded-lg p-4">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h3 className="text-lg font-bold text-white">{note.title}</h3>
-                      <p className="text-xs text-gray-400">By: {note.author || formatAddress(note.owner)}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-gray-800 rounded p-3 mb-3 max-h-40 overflow-y-auto">
-                    {note.publicPrice ? (
-                      <div className="flex flex-col items-center justify-center py-4">
-                        <p className="text-gray-300 mb-3">Premium content (Available for {note.publicPrice} ETH)</p>
-                        <button 
-                          onClick={() => handlePurchaseNote(note)}
-                          className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium py-2 px-4 rounded-md"
-                        >
-                          Purchase Note
-                        </button>
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                {publicNotes.map(note => (
+                  <div key={note.id} className="bg-gray-700 border border-gray-600 rounded-lg p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="text-lg font-bold text-white">{note.title}</h3>
+                        <p className="text-xs text-gray-400">By: {note.author || formatAddress(note.owner)}</p>
                       </div>
-                    ) : (
-                      <p className="text-gray-300 whitespace-pre-wrap">{note.content}</p>
-                    )}
-                  </div>
-                  
-                  <div className="flex justify-between items-center mt-2">
-                    <div className="text-xs text-gray-400">
-                      {new Date(note.updated).toLocaleDateString()}
+                      {note.publicPrice && !note.unlocked ? (
+                        <div className="bg-yellow-600/30 text-yellow-400 text-xs font-medium px-2 py-1 rounded flex items-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                          {note.publicPrice} ETH
+                        </div>
+                      ) : note.unlocked ? (
+                        <div className="bg-green-600/30 text-green-400 text-xs font-medium px-2 py-1 rounded flex items-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Unlocked
+                        </div>
+                      ) : (
+                        <div className="bg-blue-600/30 text-blue-400 text-xs font-medium px-2 py-1 rounded flex items-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Free
+                        </div>
+                      )}
                     </div>
                     
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleSendTip(note.owner, note.id)}
-                        className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-2 rounded flex items-center"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Tip Author ({note.tipCount})
-                      </button>
+                    <div className="bg-gray-800 rounded p-3 mb-3 max-h-40 overflow-y-auto">
+                      {note.publicPrice && !note.unlocked ? (
+                        <div className="flex flex-col items-center justify-center py-4">
+                          <div className="mb-3 w-full">
+                            {/* Preview with blurred content */}
+                            <div className="relative">
+                              <p className="text-gray-300 whitespace-pre-wrap blur-sm select-none mb-2">
+                                {note.content.substring(0, 100)}...
+                              </p>
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="bg-gray-800/80 rounded-md px-3 py-2 text-center">
+                                  <div className="text-sm text-gray-300 mb-1">Premium Content</div>
+                                  <div className="text-xs text-yellow-400 mb-3">Unlock for {note.publicPrice} ETH</div>
+                                  <button 
+                                    onClick={() => handlePurchaseNote(note)}
+                                    disabled={processingNotes.includes(note.id)}
+                                    className={`${
+                                      processingNotes.includes(note.id)
+                                        ? 'bg-gray-600 cursor-not-allowed'
+                                        : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
+                                    } text-white font-medium py-2 px-4 rounded-md flex items-center justify-center`}
+                                  >
+                                    {processingNotes.includes(note.id) ? (
+                                      <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Processing...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                        </svg>
+                                        Unlock Note
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-gray-300 whitespace-pre-wrap">{note.content}</p>
+                      )}
+                    </div>
+                    
+                    <div className="flex justify-between items-center mt-2">
+                      <div className="text-xs text-gray-400">
+                        {new Date(note.updated).toLocaleDateString()}
+                      </div>
+                      
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => handleSendTip(note.owner, note.id)}
+                          disabled={processingNotes.includes(note.id)}
+                          className={`text-xs ${
+                            processingNotes.includes(note.id) 
+                              ? 'bg-gray-600 cursor-not-allowed' 
+                              : 'bg-yellow-600 hover:bg-yellow-700'
+                          } text-white py-1 px-2 rounded flex items-center`}
+                        >
+                          {processingNotes.includes(note.id) ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Tipping...
+                            </>
+                          ) : (
+                            <>
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              Tip Author ({note.tipCount})
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
+                ))}
+              </div>
+              
+              {/* Transaction History */}
+              {transactions.length > 0 && (
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mt-6">
+                  <h3 className="text-lg font-medium text-white mb-4">Transaction History</h3>
+                  <div className="space-y-3">
+                    {transactions.map(tx => (
+                      <div key={tx.id} className="bg-gray-700 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between">
+                        <div className="mb-2 sm:mb-0">
+                          <div className="flex items-center">
+                            <div className={`rounded-full h-8 w-8 flex items-center justify-center mr-3 ${
+                              tx.type === 'tip' ? 'bg-yellow-600/30' : 'bg-purple-600/30'
+                            }`}>
+                              {tx.type === 'tip' ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm text-white font-medium">
+                                {tx.type === 'tip' ? 'Tipped author of' : 'Unlocked'}: <span className="text-blue-300">{tx.title}</span>
+                              </p>
+                              <p className="text-xs text-gray-400">By: {tx.author}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <div className="text-center">
+                            <div className="text-sm font-medium text-yellow-400">{tx.amount} ETH</div>
+                            <div className="text-xs text-gray-400">{new Date(tx.timestamp).toLocaleString()}</div>
+                          </div>
+                          <a 
+                            href={`https://sepolia.basescan.org/tx/${tx.hash}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 text-sm flex items-center"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
       )}
