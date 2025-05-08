@@ -150,24 +150,24 @@ export default function NotesManager() {
   // Funkcja sprawdzająca czy są publiczne notatki i generująca jeśli potrzeba
   const checkAndGeneratePublicNotes = () => {
     // Sprawdź najpierw w localStorage
-    const savedNotes = localStorage.getItem('smart-wallet-notes')
-    if (savedNotes) {
-      try {
-        const allNotes = JSON.parse(savedNotes)
-        // Filtruj notatki należące do aktualnego użytkownika
-        const myNotes = allNotes.filter((note: Note) => note.owner === address)
-        setNotes(myNotes)
-        
-        // Filtruj publiczne notatki innych użytkowników
-        const otherPublicNotes = allNotes.filter((note: Note) => note.isPublic && note.owner !== address)
-        setPublicNotes(otherPublicNotes)
+      const savedNotes = localStorage.getItem('smart-wallet-notes')
+      if (savedNotes) {
+        try {
+          const allNotes = JSON.parse(savedNotes)
+          // Filtruj notatki należące do aktualnego użytkownika
+          const myNotes = allNotes.filter((note: Note) => note.owner === address)
+          setNotes(myNotes)
+          
+          // Filtruj publiczne notatki innych użytkowników
+          const otherPublicNotes = allNotes.filter((note: Note) => note.isPublic && note.owner !== address)
+          setPublicNotes(otherPublicNotes)
         
         // Jeśli nie ma żadnych publicznych notatek, wygeneruj przykładowe
         if (otherPublicNotes.length === 0) {
           generatePublicSampleNotes()
         }
-      } catch (e) {
-        console.error('Failed to parse saved notes', e)
+        } catch (e) {
+          console.error('Failed to parse saved notes', e)
         generatePublicSampleNotes() // Wygeneruj w przypadku błędu
       }
     } else {
@@ -324,8 +324,8 @@ export default function NotesManager() {
       }
     }
     
-    // Add new transaction at the beginning and keep only last 20
-    transactions = [newTx, ...transactions].slice(0, 50) // Zwiększamy limit do 50
+    // Add new transaction at the beginning and keep only last 50
+    transactions = [newTx, ...transactions].slice(0, 50)
     
     // Save updated transactions
     localStorage.setItem(storageKey, JSON.stringify(transactions))
@@ -336,10 +336,8 @@ export default function NotesManager() {
     })
     window.dispatchEvent(event)
     
-    // Odśwież transakcje w UI
-    loadTransactionHistory(address)
-    
-    console.log('Transaction saved successfully')
+    // Return the transaction for UI updates (instead of calling loadTransactionHistory)
+    return newTx
   }
 
   // Obsługa tworzenia/edycji notatki
@@ -356,10 +354,10 @@ export default function NotesManager() {
       // Aktualizacja istniejącej notatki
       const updatedNote = { 
         ...selectedNote, 
-        title: newNoteTitle, 
-        content: newNoteContent, 
-        updated: now,
-        isPublic: isPublicMode,
+              title: newNoteTitle, 
+              content: newNoteContent, 
+              updated: now,
+              isPublic: isPublicMode,
         publicPrice: isPublicMode ? publicPrice : undefined,
         author: formattedAuthor
       };
@@ -487,21 +485,12 @@ export default function NotesManager() {
       const txDetails = `Sent ${tipAmount} ETH tip for note: ${noteTitle}`
       
       // Save transaction to history
-      saveTransaction(address, 'send', hash, txDetails, noteTitle, noteAuthor, tipAmount)
+      const newTx = saveTransaction(address, 'send', hash, txDetails, noteTitle, noteAuthor, tipAmount)
       
-      // Zaktualizuj historię transakcji w UI
-      const newTx = {
-        id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-        hash,
-        type: 'tip',
-        timestamp: Date.now(),
-        details: txDetails,
-        author: noteAuthor,
-        title: noteTitle,
-        amount: tipAmount
+      // Update the UI with the new transaction without reloading everything
+      if (newTx) {
+        setTransactions(prev => [newTx, ...prev])
       }
-      
-      setTransactions(prev => [newTx, ...prev])
       
       showToast(`Tip sent successfully!`, 'success', hash)
     } catch (error) {
@@ -536,7 +525,7 @@ export default function NotesManager() {
         publicPrice: undefined
       }
       
-      setNotes([...notes, purchasedNote])
+      setNotes(prev => [...prev, purchasedNote])
       
       // Wyświetl znacznik "Unlocked" dla tej notatki
       // Zaktualizuj publicNotes, dodając pole unlocked dla tej notatki
@@ -545,26 +534,31 @@ export default function NotesManager() {
       )
       setPublicNotes(updatedPublicNotes)
       
+      // Zaktualizuj również unlocked status w localStorage
+      const savedNotes = localStorage.getItem('smart-wallet-notes')
+      if (savedNotes) {
+        try {
+          const allNotes = JSON.parse(savedNotes)
+          const updatedAllNotes = allNotes.map((n: Note) => 
+            n.id === note.id ? { ...n, unlocked: true } : n
+          )
+          localStorage.setItem('smart-wallet-notes', JSON.stringify(updatedAllNotes))
+        } catch (e) {
+          console.error('Failed to update note unlock status', e)
+        }
+      }
+      
       // Pobierz dane autora
       const noteAuthor = note.author || formatAddress(note.owner)
       
       // Save transaction to history
       const txDetails = `Purchased note: ${note.title} for ${note.publicPrice} ETH`
-      saveTransaction(address, 'send', hash, txDetails, note.title, noteAuthor, note.publicPrice)
+      const newTx = saveTransaction(address, 'send', hash, txDetails, note.title, noteAuthor, note.publicPrice)
       
-      // Zaktualizuj historię transakcji w UI
-      const newTx = {
-        id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-        hash,
-        type: 'send',
-        timestamp: Date.now(),
-        details: txDetails,
-        author: noteAuthor,
-        title: note.title,
-        amount: note.publicPrice
+      // Update the UI with the new transaction without reloading everything
+      if (newTx) {
+        setTransactions(prev => [newTx, ...prev])
       }
-      
-      setTransactions(prev => [newTx, ...prev])
       
       showToast(`Note "${note.title}" unlocked successfully!`, 'success', hash)
     } catch (error) {
@@ -607,6 +601,17 @@ export default function NotesManager() {
     let successCount = 0
     let newTransactions = []
     
+    // Get all notes from localStorage to update unlock status
+    const savedNotes = localStorage.getItem('smart-wallet-notes')
+    let allStoredNotes = []
+    if (savedNotes) {
+      try {
+        allStoredNotes = JSON.parse(savedNotes)
+      } catch (e) {
+        console.error('Failed to parse saved notes', e)
+      }
+    }
+    
     for (const note of paidNotes) {
       if (!note.publicPrice) continue
       
@@ -631,24 +636,24 @@ export default function NotesManager() {
         // Oznacz notatkę jako odblokowaną
         note.unlocked = true
         
+        // Update unlock status in localStorage
+        if (allStoredNotes.length > 0) {
+          allStoredNotes = allStoredNotes.map((n: Note) => 
+            n.id === note.id ? { ...n, unlocked: true } : n
+          )
+        }
+        
         // Pobierz dane autora
         const noteAuthor = note.author || formatAddress(note.owner)
         
         // Zapisz transakcję w historii
         const txDetails = `Purchased note: ${note.title} for ${note.publicPrice} ETH`
-        saveTransaction(address, 'send', hash, txDetails, note.title, noteAuthor, note.publicPrice)
+        const newTx = saveTransaction(address, 'send', hash, txDetails, note.title, noteAuthor, note.publicPrice)
         
         // Dodaj transakcję do listy nowych transakcji
-        newTransactions.push({
-          id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-          hash,
-          type: 'send',
-          timestamp: Date.now(),
-          details: txDetails,
-          author: noteAuthor,
-          title: note.title,
-          amount: note.publicPrice
-        })
+        if (newTx) {
+          newTransactions.push(newTx)
+        }
         
         successCount++
       } catch (error) {
@@ -659,11 +664,19 @@ export default function NotesManager() {
       }
     }
     
+    // Save updated unlock statuses to localStorage
+    if (allStoredNotes.length > 0) {
+      localStorage.setItem('smart-wallet-notes', JSON.stringify(allStoredNotes))
+    }
+    
     // Zaktualizuj historię transakcji w UI
     setTransactions(prev => [...newTransactions, ...prev])
     
-    // Zaktualizuj widok publicNotes
-    const updatedPublicNotes = [...publicNotes]
+    // Zaktualizuj widok publicNotes z ustawionymi flagami unlocked
+    const updatedPublicNotes = publicNotes.map(note => {
+      const matchingNote = paidNotes.find(n => n.id === note.id)
+      return matchingNote ? { ...note, unlocked: true } : note
+    })
     setPublicNotes(updatedPublicNotes)
     
     // Wyłącz stan ładowania
@@ -822,7 +835,7 @@ export default function NotesManager() {
                 <div key={note.id} className="bg-gray-700 border border-gray-600 rounded-lg p-4">
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <h3 className="text-lg font-bold text-white">{note.title}</h3>
+                    <h3 className="text-lg font-bold text-white">{note.title}</h3>
                       <p className="text-xs text-gray-400">By: {note.author || formatAddress(note.owner)}</p>
                     </div>
                     <div className="flex space-x-2">
@@ -857,12 +870,12 @@ export default function NotesManager() {
                         </span>
                       ) : (
                         <div className="flex items-center space-x-2">
-                          <span className="inline-flex items-center bg-gray-900/50 text-gray-400 px-2 py-1 rounded">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
-                            Private
-                          </span>
+                        <span className="inline-flex items-center bg-gray-900/50 text-gray-400 px-2 py-1 rounded">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                          </svg>
+                          Private
+                        </span>
                           <button
                             onClick={() => {
                               const updatedNote = { ...note, isPublic: true, publicPrice: '0.0001' };
@@ -942,13 +955,13 @@ export default function NotesManager() {
           ) : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                {publicNotes.map(note => (
-                  <div key={note.id} className="bg-gray-700 border border-gray-600 rounded-lg p-4">
-                    <div className="flex justify-between items-start mb-2">
+              {publicNotes.map(note => (
+                <div key={note.id} className="bg-gray-700 border border-gray-600 rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
                       <div>
-                        <h3 className="text-lg font-bold text-white">{note.title}</h3>
+                    <h3 className="text-lg font-bold text-white">{note.title}</h3>
                         <p className="text-xs text-gray-400">By: {note.author || formatAddress(note.owner)}</p>
-                      </div>
+                    </div>
                       {note.publicPrice && !note.unlocked ? (
                         <div className="bg-yellow-600/30 text-yellow-400 text-xs font-medium px-2 py-1 rounded flex items-center">
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -971,11 +984,11 @@ export default function NotesManager() {
                           Free
                         </div>
                       )}
-                    </div>
-                    
-                    <div className="bg-gray-800 rounded p-3 mb-3 max-h-40 overflow-y-auto">
+                  </div>
+                  
+                  <div className="bg-gray-800 rounded p-3 mb-3 max-h-40 overflow-y-auto">
                       {note.publicPrice && !note.unlocked ? (
-                        <div className="flex flex-col items-center justify-center py-4">
+                      <div className="flex flex-col items-center justify-center py-4">
                           <div className="mb-3 w-full">
                             {/* Preview with blurred content */}
                             <div className="relative">
@@ -986,8 +999,8 @@ export default function NotesManager() {
                                 <div className="bg-gray-800/80 rounded-md px-3 py-2 text-center">
                                   <div className="text-sm text-gray-300 mb-1">Premium Content</div>
                                   <div className="text-xs text-yellow-400 mb-3">Unlock for {note.publicPrice} ETH</div>
-                                  <button 
-                                    onClick={() => handlePurchaseNote(note)}
+                        <button 
+                          onClick={() => handlePurchaseNote(note)}
                                     disabled={processingNotes.includes(note.id)}
                                     className={`${
                                       processingNotes.includes(note.id)
@@ -1011,25 +1024,25 @@ export default function NotesManager() {
                                         Unlock Note
                                       </>
                                     )}
-                                  </button>
+                        </button>
                                 </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ) : (
-                        <p className="text-gray-300 whitespace-pre-wrap">{note.content}</p>
-                      )}
+                      </div>
+                    ) : (
+                      <p className="text-gray-300 whitespace-pre-wrap">{note.content}</p>
+                    )}
+                  </div>
+                  
+                  <div className="flex justify-between items-center mt-2">
+                    <div className="text-xs text-gray-400">
+                      {new Date(note.updated).toLocaleDateString()}
                     </div>
                     
-                    <div className="flex justify-between items-center mt-2">
-                      <div className="text-xs text-gray-400">
-                        {new Date(note.updated).toLocaleDateString()}
-                      </div>
-                      
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleSendTip(note.owner, note.id)}
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleSendTip(note.owner, note.id)}
                           disabled={processingNotes.includes(note.id)}
                           className={`text-xs ${
                             processingNotes.includes(note.id) 
@@ -1047,18 +1060,18 @@ export default function NotesManager() {
                             </>
                           ) : (
                             <>
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              Tip Author ({note.tipCount})
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Tip Author ({note.tipCount})
                             </>
                           )}
-                        </button>
-                      </div>
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
               
               {/* Transaction History */}
               {transactions.length > 0 && (
